@@ -1,0 +1,79 @@
+#Пункт 1.2
+import telebot
+from cryptography.fernet import Fernet
+import base64
+from datetime import datetime
+
+# Установка вашего токена бота
+TOKEN = '6975426443:AAFcmLmGwYdL6UXooAnbzRzQKzTZd-55JBc'
+
+bot = telebot.TeleBot(TOKEN)
+
+
+@bot.message_handler(commands=['start', 'help'])
+def send_welcome(message):
+    bot.send_message(message.chat.id, "Привет! Я бот для шифрования и дешифрования текста с использованием Fernet. "
+                                      "Доступные команды:\n"
+                                      "/encode_fernet - Зашифровать текст\n"
+                                      "/decode_fernet - Расшифровать текст\n"
+                                      "/help - Показать доступные команды")
+
+
+@bot.message_handler(func=lambda message: True, content_types=['text'])
+def handle_text(message):
+    print(f"Получено сообщение от пользователя: {message.text}")
+
+    if message.text.startswith('/encode_fernet'):
+        encrypt_message(message)
+    elif message.text.startswith('/decode_fernet'):
+        decrypt_message(message)
+    else:
+        log_error(message)
+        bot.send_message(message.chat.id, "Я не могу вам помочь в этом, напишите /help чтобы узнать функционал.")
+
+
+def encrypt_message(message):
+    sent = bot.send_message(message.chat.id, "Введите текст для шифрования:")
+    bot.register_next_step_handler(sent, lambda m: perform_encryption(m, message.chat.id))
+
+
+def perform_encryption(message, chat_id):
+    original_text = message.text
+    key = Fernet.generate_key()
+    cipher_suite = Fernet(key)
+    cipher_text = cipher_suite.encrypt(original_text.encode('utf-8'))
+
+    bot.send_message(chat_id, f"Зашифрованный текст: {cipher_text.decode('utf-8')}")
+    bot.send_message(chat_id, f"Ключ шифрования: {base64.urlsafe_b64encode(key).decode('utf-8')}")
+
+
+def decrypt_message(message):
+    sent = bot.send_message(message.chat.id, "Введите ключ шифрования:")
+    bot.register_next_step_handler(sent, lambda m: ask_for_cipher_text(m, message.chat.id))
+
+
+def ask_for_cipher_text(message, chat_id):
+    bot.send_message(chat_id, "Введите зашифрованный текст:")
+    bot.register_next_step_handler(message, lambda m: perform_decryption(m, message.text))
+
+
+def perform_decryption(message, key_text):
+    try:
+        key = base64.urlsafe_b64decode(key_text.encode('utf-8'))
+        cipher_text = message.text.encode('utf-8')
+        cipher_suite = Fernet(key)
+        decrypted_text = cipher_suite.decrypt(cipher_text).decode('utf-8')
+        bot.send_message(message.chat.id, f"Расшифрованный текст: {decrypted_text}")
+    except Exception as e:
+        log_error(message)
+        bot.send_message(message.chat.id, "Я не могу вам помочь в этом, напишите /help чтобы узнать функционал.")
+
+
+def log_error(message):
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    error_message = f"[{current_time}] Ошибка в запросе: {message.text}"
+    print('\033[91m' + f"ERROR: {error_message}" + '\033[0m')
+
+
+bot.polling()
+
