@@ -1,0 +1,337 @@
+#Пункт 1.4
+●	import cryptography
+import telebot
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.backends import default_backend
+import base64
+from datetime import datetime
+import hashlib
+import serialization
+from cryptography.hazmat.primitives import serialization
+
+TOKEN = '6975426443:AAFcmLmGwYdL6UXooAnbzRzQKzTZd-55JBc'
+bot = telebot.TeleBot(TOKEN)
+
+cryptography_hazmat_encoded_text = ''
+flag = 0
+private_key = None
+
+def send_welcome(message):
+    bot.send_message(message.chat.id, "Привет! Я бот для шифрования и дешифрования текста. "
+                                      "Доступные команды:\n"
+                                      "/encode_fernet - Зашифровать текст с использованием Fernet\n"
+                                      "/decode_fernet - Расшифровать текст с использованием Fernet\n"
+                                      "/encode_vigenere - Зашифровать текст методом Виженера\n"
+                                      "/decode_vigenere - Расшифровать текст методом Виженера\n"
+                                      "/cryptography_hazmat_encode - Зашифровать текст с использованием cryptography.hazmat\n"
+                                      "/cryptography_hazmat_decode - Расшифровать текст с использованием cryptography.hazmat\n"
+                                      "/rsa_encrypt - Зашифровать текст с использованием RSA\n"
+                                      "/rsa_decrypt - Расшифровать текст с использованием RSA\n"
+                                      "/hash_text - Захешировать текст\n"
+                                      "/compare_hashes - Сравнить хеши\n"
+                                      "/help - Показать доступные команды")
+
+@bot.message_handler(func=lambda message: True, content_types=['text'])
+def handle_text(message):
+    print(f"Получено сообщение от пользователя: {message.text}")
+
+    if message.text.startswith('/encode_fernet'):
+        encrypt_message_fernet(message)
+    elif message.text.startswith('/decode_fernet'):
+        decrypt_message_fernet(message)
+    elif message.text.startswith('/encode_vigenere'):
+        encode_vigenere(message)
+    elif message.text.startswith('/decode_vigenere'):
+        decode_vigenere(message)
+    elif message.text.startswith('/rsa_encrypt'):
+        encrypt_message_rsa(message)
+    elif message.text.startswith('/rsa_decrypt'):
+        decrypt_message_rsa(message)
+    elif message.text.startswith('/cryptography_hazmat_encode'):
+        encrypt_message_cryptography_hazmat(message)
+    elif message.text.startswith('/cryptography_hazmat_decode'):
+        decrypt_message_cryptography_hazmat(message)
+    elif message.text.startswith('/hash_text'):
+        hash_text_command(message)
+    elif message.text.startswith('/compare_hashes'):
+        compare_hashes_command(message)
+    elif message.text.startswith('/help'):
+        send_welcome(message)
+    else:
+        log_error(message)
+        bot.send_message(message.chat.id, "Я не могу вам помочь в этом, напишите /help чтобы узнать функционал.")
+def generate_private_key():
+    global flag, private_key
+    if flag == 0:
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048,
+            backend=default_backend()
+        )
+        flag = 1
+    return private_key
+
+
+def vigenere_encrypt(plaintext, key):
+    encrypted_text = ''
+    key_length = len(key)
+    for i in range(len(plaintext)):
+        char = plaintext[i]
+        if char.isalpha():
+            key_char = key[i % key_length]
+            shift = ord(key_char.lower()) - ord('а')
+            if char.isupper():
+                encrypted_text += chr((ord(char) + shift - ord('А')) % 33 + ord('А'))
+            elif char.islower():
+                encrypted_text += chr((ord(char) + shift - ord('а')) % 33 + ord('а'))
+        else:
+            encrypted_text += char
+    return encrypted_text
+
+def vigenere_decrypt(ciphertext, key):
+    decrypted_text = ''
+    key_length = len(key)
+    for i in range(len(ciphertext)):
+        char = ciphertext[i]
+        if char.isalpha():
+            key_char = key[i % key_length]
+            shift = ord(key_char.lower()) - ord('а')
+            if char.isupper():
+                decrypted_text += chr((ord(char) - shift - ord('А')) % 33 + ord('А'))
+            elif char.islower():
+                decrypted_text += chr((ord(char) - shift - ord('а')) % 33 + ord('а'))
+        else:
+            decrypted_text += char
+    return decrypted_text
+
+def encode_vigenere(message):
+    sent = bot.send_message(message.chat.id, "Введите текст для шифрования:")
+    bot.register_next_step_handler(sent, lambda m: perform_vigenere_encryption(m, message.chat.id))
+
+def perform_vigenere_encryption(message, chat_id):
+    original_text = message.text
+    sent = bot.send_message(chat_id, "Введите слово, которое будет использовано в качестве ключа:")
+    bot.register_next_step_handler(sent, lambda m: send_vigenere_encrypted_text(m, chat_id, original_text))
+
+def send_vigenere_encrypted_text(message, chat_id, original_text):
+    key_word = message.text.lower()
+    encrypted_text = vigenere_encrypt(original_text, key_word)
+    bot.send_message(chat_id, f"Зашифрованный текст: {encrypted_text}\n"
+                              f"Слово-ключ: {key_word}")
+
+def decode_vigenere(message):
+    sent = bot.send_message(message.chat.id, "Введите зашифрованный текст:")
+    bot.register_next_step_handler(sent, lambda m: ask_for_vigenere_key(m, message.chat.id))
+
+def ask_for_vigenere_key(message, chat_id):
+    vigenere_encoded_text = message.text
+    sent = bot.send_message(chat_id, "Введите слово-ключ для расшифровки:")
+    bot.register_next_step_handler(sent, lambda m: perform_vigenere_decryption(m, vigenere_encoded_text, chat_id))
+
+def perform_vigenere_decryption(message, vigenere_encoded_text, chat_id):
+    key_word = message.text.lower()
+    decrypted_text = vigenere_decrypt(vigenere_encoded_text, key_word)
+    bot.send_message(chat_id, f"Расшифрованный текст: {decrypted_text}")
+
+
+def hash_text(text):
+    hashed_text = hashlib.sha256(text).hexdigest()
+    return hashed_text
+
+def encrypt_text_cryptography_hazmat(original_text):
+    private_key = generate_private_key()
+    public_key = private_key.public_key()
+
+    text_to_encrypt = original_text
+    ciphertext = public_key.encrypt(
+        text_to_encrypt,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return ciphertext
+
+def decrypt_text_cryptography_hazmat(ciphertext):
+    private_key = generate_private_key()
+
+    plaintext = private_key.decrypt(
+        ciphertext,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    decrypted_text = plaintext.decode('utf-8')
+    return decrypted_text
+
+
+def encrypt_message_cryptography_hazmat(message):
+    global cryptography_hazmat_encoded_text
+    sent = bot.send_message(message.chat.id, "Введите текст для шифрования:")
+    bot.register_next_step_handler(sent, lambda m: perform_encryption_cryptography_hazmat(m, message.chat.id))
+
+def perform_encryption_cryptography_hazmat(message, chat_id):
+    global cryptography_hazmat_encoded_text
+    original_text = message.text.encode('utf-8')
+    ciphertext = encrypt_text_cryptography_hazmat(original_text)
+    cryptography_hazmat_encoded_text = base64.urlsafe_b64encode(ciphertext).decode('utf-8')
+
+    bot.send_message(chat_id, f"Зашифрованный текст: {cryptography_hazmat_encoded_text}")
+
+def decrypt_message_cryptography_hazmat(message):
+    sent = bot.send_message(message.chat.id, "Введите зашифрованный текст:")
+    bot.register_next_step_handler(sent, lambda m: ask_for_cipher_text_cryptography_hazmat(m, message.chat.id))
+
+def ask_for_cipher_text_cryptography_hazmat(message, chat_id):
+    global cryptography_hazmat_encoded_text
+    cryptography_hazmat_encoded_text = message.text
+    perform_decryption_cryptography_hazmat(message, cryptography_hazmat_encoded_text)
+
+def perform_decryption_cryptography_hazmat(message, ciphertext_text):
+    try:
+        ciphertext = base64.urlsafe_b64decode(ciphertext_text.encode('utf-8'))
+        decrypted_text = decrypt_text_cryptography_hazmat(ciphertext)
+        bot.send_message(message.chat.id, f"Расшифрованный текст: {decrypted_text}")
+    except Exception as e:
+        log_error(message)
+        bot.send_message(message.chat.id, f"Произошла ошибка при расшифровке текста: {str(e)}")
+
+def encrypt_message_fernet(message):
+    sent = bot.send_message(message.chat.id, "Введите текст для шифрования:")
+    bot.register_next_step_handler(sent, lambda m: perform_encryption_fernet(m, message.chat.id))
+
+def perform_encryption_fernet(message, chat_id):
+    original_text = message.text.encode('utf-8')
+    key = Fernet.generate_key()
+    cipher_suite = Fernet(key)
+    cipher_text = cipher_suite.encrypt(original_text)
+
+    bot.send_message(chat_id, f"Зашифрованный текст: {base64.urlsafe_b64encode(cipher_text).decode('utf-8')}")
+    bot.send_message(chat_id, f"Ключ шифрования: {base64.urlsafe_b64encode(key).decode('utf-8')}")
+
+def decrypt_message_fernet(message):
+    sent = bot.send_message(message.chat.id, "Введите ключ шифрования:")
+    bot.register_next_step_handler(sent, lambda m: ask_for_cipher_text_fernet(m, message.chat.id))
+
+def generate_rsa_key_pair():
+    private_key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
+    )
+    public_key = private_key.public_key()
+    return private_key, public_key
+
+def rsa_encrypt(plaintext, public_key):
+    ciphertext = public_key.encrypt(
+        plaintext.encode(),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+    return base64.urlsafe_b64encode(ciphertext)
+
+def rsa_decrypt(ciphertext, private_key, encryption_key):
+    try:
+        encrypted_bytes = base64.urlsafe_b64decode(ciphertext.encode('utf-8'))
+        decrypted_text = private_key.decrypt(
+            encrypted_bytes,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        return decrypted_text.decode('utf-8')
+    except Exception as e:
+        log_error(f"Ошибка при расшифровке текста: {str(e)}")
+        return None
+
+
+def encrypt_message_rsa(message):
+    global private_key, public_key
+    private_key, public_key = generate_rsa_key_pair()
+    bot.send_message(message.chat.id, "Введите текст для шифрования:")
+    bot.register_next_step_handler(message, lambda m: perform_encryption_rsa(m, public_key))
+
+def perform_encryption_rsa(message, public_key):
+    original_text = message.text
+    encrypted_text = rsa_encrypt(original_text, public_key)
+    bot.send_message(message.chat.id, f"Зашифрованный текст: {encrypted_text.decode('utf-8')}\n\n"
+                                      f"Зашифровано с использованием публичного ключа:\n{public_key.public_bytes(encoding=serialization.Encoding.PEM, format=serialization.PublicFormat.SubjectPublicKeyInfo).decode('utf-8')}")
+
+def decrypt_message_rsa(message):
+    sent = bot.send_message(message.chat.id, "Введите зашифрованный текст:")
+    bot.register_next_step_handler(sent, lambda m: ask_for_decryption_key_rsa(message, m.text))
+
+def ask_for_decryption_key_rsa(message, ciphertext):
+    sent = bot.send_message(message.chat.id, "Введите ключ шифрования:")
+    bot.register_next_step_handler(sent, lambda m: perform_decryption_rsa(message, ciphertext, m.text))
+
+def perform_decryption_rsa(message, ciphertext, encryption_key):
+    decrypted_text = rsa_decrypt(ciphertext, private_key, encryption_key)
+    if decrypted_text:
+        bot.send_message(message.chat.id, f"Расшифрованный текст: {decrypted_text}")
+
+def ask_for_cipher_text_fernet(message, chat_id):
+    bot.send_message(chat_id, "Введите зашифрованный текст:")
+    bot.register_next_step_handler(message, lambda m: perform_decryption_fernet(m, message.text))
+
+def perform_decryption_fernet(message, key_text):
+    try:
+        key = base64.urlsafe_b64decode(key_text.encode('utf-8'))
+        cipher_text = base64.urlsafe_b64decode(message.text)
+        cipher_suite = Fernet(key)
+        decrypted_text = cipher_suite.decrypt(cipher_text).decode('utf-8')
+        bot.send_message(message.chat.id, f"Расшифрованный текст: {decrypted_text}")
+    except Exception as e:
+        log_error(message)
+        bot.send_message(message.chat.id, f"Произошла ошибка при расшифровке текста: {str(e)}")
+
+def hash_text_command(message):
+    sent = bot.send_message(message.chat.id, "Введите текст для хеширования:")
+    bot.register_next_step_handler(sent, lambda m: send_hashed_text(m, message.chat.id))
+
+def send_hashed_text(message, chat_id):
+    original_text = message.text.encode('utf-8')
+    hashed_text = hash_text(original_text)
+    bot.send_message(chat_id, f"Хеш текста: {hashed_text}")
+
+def compare_hashes_command(message):
+    if message.text == '/compare_hashes':
+        sent = bot.send_message(message.chat.id, "Введите первый хеш текста:")
+        bot.register_next_step_handler(sent, lambda m: ask_for_comparison_text(m, message.chat.id))
+    else:
+        bot.send_message(message.chat.id, "Неправильная команда. Используйте /compare_hashes для начала сравнения хешей.")
+
+def ask_for_comparison_text(message, chat_id):
+    first_hash_text = message.text
+    bot.send_message(chat_id, "Введите текст для сравнения:")
+    bot.register_next_step_handler(message, lambda m: perform_hash_comparison(m, first_hash_text))
+
+def perform_hash_comparison(message, first_hash_text):
+    try:
+        original_text = message.text.encode('utf-8')
+        second_hash_text = hash_text(original_text)
+
+        if first_hash_text == second_hash_text:
+            bot.send_message(message.chat.id, "Хеши совпадают")
+        else:
+            bot.send_message(message.chat.id, "Хеши не совпадают")
+    except Exception as e:
+        log_error(message)
+        bot.send_message(message.chat.id, "Я не могу вам помочь в этом, напишите /help чтобы узнать функционал.")
+
+def log_error(message):
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    error_message = f"[{current_time}] Ошибка в запросе: {message.text}"
+    print('\033[91m' + f"ERROR: {error_message}" + '\033[0m')
+
+bot.polling()
